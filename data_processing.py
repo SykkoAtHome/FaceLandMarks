@@ -1,10 +1,10 @@
+from typing import Tuple, Any
+
 import mediapipe as mp
 import pandas as pd
 
-from scipy.signal import savgol_filter
 
-
-def landmarks_to_dataframe(landmarks_results):
+def landmarks_to_dataframe(landmarks_results) -> pd.DataFrame:
     print("Converting landmarks to dataframe...")
     df_columns = ["frame", "landmark_id", "x", "y", "z"]
     df_data = []
@@ -41,19 +41,13 @@ def dataframe_to_landmarks(df, existing_landmarks):
     return landmarks_by_frame
 
 
-from scipy.signal import savgol_filter
+def get_landmark_coordinates_from_df(df, frame, landmark_id):
+    selected_landmarks = df[(df['frame'] == frame) & (df['landmark_id'] == landmark_id)]
 
-
-def savgol_df(df, window_length, polyorder):
-    # Function to apply savgol_filter to a single column
-    def apply_savgol(column):
-        return savgol_filter(column, window_length, polyorder)
-
-    # Apply savgol_filter to x, y, z columns for each group
-    df_filtered = df.groupby("frame").apply(lambda group: group.assign(
-        x=apply_savgol(group["x"]),
-        y=apply_savgol(group["y"]),
-        z=apply_savgol(group["z"])
-    ))
-
-    return df_filtered.droplevel(0)  # Drop the outer level of the index
+    if not selected_landmarks.empty:
+        x = selected_landmarks['x'].values[0]
+        y = selected_landmarks['y'].values[0]
+        z = selected_landmarks['z'].values[0]
+        return {"x": x, "y": y, "z": z}
+    else:
+        return None

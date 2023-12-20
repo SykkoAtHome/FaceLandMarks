@@ -1,13 +1,11 @@
 import cv2
 
-from data_processing import landmarks_to_dataframe, dataframe_to_landmarks, savgol_df
+from data_processing import landmarks_to_dataframe, dataframe_to_landmarks
 from image_input import get_image_sequence
-from landmarks import detect_landmarks, mp_face_mesh, mp_draw
+from landmarks import detect_landmarks, mp_draw
 
-file_name = "video/lb.mp4"
+file_name = "video/Head Talking.mp4"
 image_seq, total_frames, original_fps = get_image_sequence(file_name)
-
-current_frame = 0
 
 # detect landmarks
 all_frames_landmarks = detect_landmarks(image_seq)
@@ -15,11 +13,10 @@ all_frames_landmarks = detect_landmarks(image_seq)
 # convert landmarks to dataframe
 df_landmarks = landmarks_to_dataframe(all_frames_landmarks)
 
-# apply savgol filter to dataframe
-df_landmarks_filtered = savgol_df(df_landmarks, window_length=10, polyorder=0)
-
 # convert dataframe back to landmarks
 landmarks_from_df = dataframe_to_landmarks(df_landmarks, all_frames_landmarks)
+
+current_frame = 0
 
 # draw landmarks on image
 while image_seq.isOpened():
