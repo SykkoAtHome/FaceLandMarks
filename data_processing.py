@@ -45,9 +45,10 @@ def get_landmark_coordinates_from_df(df, frame, landmark_id):
     selected_landmarks = df[(df['frame'] == frame) & (df['landmark_id'] == landmark_id)]
 
     if not selected_landmarks.empty:
+        l_id = selected_landmarks['landmark_id'].values[0]
         x = selected_landmarks['x'].values[0]
         y = selected_landmarks['y'].values[0]
         z = selected_landmarks['z'].values[0]
-        return {"x": x, "y": y, "z": z}
+        return {"id": l_id, "x": x, "y": y, "z": z}
     else:
         return None
