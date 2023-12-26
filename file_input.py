@@ -2,8 +2,6 @@ import cv2
 import os
 import glob
 
-import numpy as np
-
 
 class FileInput:
     def __init__(self, input_path, name: str = None, motion_vectors: bool = False):
@@ -12,15 +10,16 @@ class FileInput:
 
         # Initialize attributes
         self.total_frames: int = 0
-        self.frame_seq = []
+        self.frame_seq = None
         self.frame_width: int = 0
         self.frame_height: int = 0
         self.fps: float = 25.0  # Default fps for image sequence. Will be updated if input is a video file
         # Load frames and set other attributes
         self.load_frames()
-        self.mv = self.motion_vectors() if motion_vectors else []
+        self.mv = self.motion_vectors() if motion_vectors else None
 
     def load_frames(self):
+        self.frame_seq = []
         print("Loading frames...")
         # Check if the input path is a video file
         if os.path.isfile(self.input_path):
@@ -31,19 +30,20 @@ class FileInput:
             print("Image sequence detected.")
             self.load_image_sequence_frames()
         else:
-            raise ValueError("Invalid input_path. Provide a valid video file or folder containing image sequence.")
+            raise ValueError("Invalid input_path. Provide a valid video file or folder with images")
 
     def load_video_frames(self):
         if self.name:
-            print("Video name: ", self.name)
+            print(f"Video name: {self.name}")
         cap = cv2.VideoCapture(self.input_path)
         self.total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        print("Total frames: ", self.total_frames)
+        print(f"Total frames: {self.total_frames}")
         self.frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        print("Frame: ", self.frame_height, "x", self.frame_width)
+        print(
+            f"Frame: {self.frame_width} x {self.frame_height} ({round(float(self.frame_width / self.frame_height), 4)})")
         self.fps = round(float(cap.get(cv2.CAP_PROP_FPS)), 3)
-        print("FPS: ", self.fps)
+        print(f"FPS: {self.fps}")
 
         # Read frames into frame_seq
         while True:
@@ -61,7 +61,7 @@ class FileInput:
                              glob.glob(os.path.join(self.input_path, '*.exr')))
 
         if not image_files:
-            raise ValueError("No image files found in the specified folder.")
+            raise ValueError("No images found in the specified folder.")
 
         # Read the first image to get dimensions
         first_image = cv2.imread(image_files[0])
@@ -82,6 +82,7 @@ class FileInput:
         print("FPS: ", self.fps, " (default)")
 
     def motion_vectors(self):
+        self.mv = []
         start_time = cv2.getTickCount()
         # Initialize motion vectors list
         motion_vectors_list = []

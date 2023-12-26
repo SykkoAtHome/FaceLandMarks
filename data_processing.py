@@ -40,7 +40,7 @@ class ImageProcessing:
             #     print(f"No landmarks detected for frame {frame_count}")
 
         end_time = time.time()
-        print(f"Total detection time: {int(end_time - start_time)} seconds")
+        print(f"Landmarks detected in: {int(end_time - start_time)} seconds")
         return all_landmarks
 
     def auto_detect_landmarks(self):
@@ -86,6 +86,8 @@ class ImageProcessing:
                     df_data.append([frame_num, "mediapipe", landmark_id, x, y, z])
 
         df_landmarks = pd.DataFrame(df_data, columns=df_columns)
+        if len(df_landmarks['frame'].unique()) < len(self.file_input.frame_seq):
+            print(f"Warrning: Frames without landmarks: {len(self.file_input.frame_seq) - len(df_landmarks['frame'].unique())}")
         return df_landmarks
 
     def dataframe_to_landmarks(self):
