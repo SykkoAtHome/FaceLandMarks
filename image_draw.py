@@ -1,18 +1,22 @@
 import cv2
 import numpy as np
 
-from data_processing import ImageProcessing
+from data_processing import DataProcessing
 
 
 class ImageDraw:
-    def __init__(self, image_processing: ImageProcessing):
+    def __init__(self, image_processing: DataProcessing):
         self.file_input = image_processing.file_input
-        self.landmarks = image_processing.dataframe
-        self.landmarks_color = {'mediapipe': (0, 255, 0), 'interpolated': (0, 165, 255)}  # Green and Orange colors
+        self.dataframe = image_processing.dataframe
+        self.dataframe_refined = image_processing.dataframe_refined
+        self.landmarks_color = {'mediapipe': (0, 255, 0),
+                                'interpolated': (0, 165, 255),
+                                'motion': (200, 75, 0)
+                                }  # Green, Orange and Blue colors
         self.seq_buffer = []
 
     def source_image(self, start_frame: int = None, end_frame: int = None,
-                     resize: int = None, landmarks: bool = False) -> "ImageDraw":
+                     resize: int = None, landmarks: bool = False, refined: bool = False) -> "ImageDraw":
         if self.file_input.frame_seq is None:
             print("Image sequence not found. Did you provide a video file or images?")
             return self
@@ -26,10 +30,13 @@ class ImageDraw:
             frame = self.file_input.frame_seq[frame_num]
             # print(type(frame))
             # Process all frames, regardless of whether they have landmarks
-            frame = self.draw_landmarks_on_frame(frame, self.landmarks[
-                self.landmarks['frame'] == frame_num]) if landmarks else None
+            # if landmarks:
+            #     frame = self.draw_landmarks_on_frame(frame, self.dataframe[
+            #         self.dataframe['frame'] == frame_num])
+            if landmarks and refined:
+                frame = self.draw_landmarks_on_frame(frame, self.dataframe_refined[
+                    self.dataframe_refined['frame'] == frame_num])
 
-            # print(type(frame))
             # Resize the frame if requested
             if resize:
                 frame = cv2.resize(frame, (resize, int(frame.shape[0] * (resize / frame.shape[1]))))
@@ -39,9 +46,12 @@ class ImageDraw:
             # print(f"Frame dimensions after resizing: {frame.shape}")
         return self
 
-    def draw_landmarks_on_frame(self, frame, landmarks_df):
+    def draw_landmarks_on_frame(self, frame, landmarks_df, landmark_id: int = None):
         if landmarks_df.empty:
             return frame
+
+        if landmark_id is not None:
+            landmarks_df = landmarks_df[landmarks_df['landmark_id'] == landmark_id]
 
         modified_frame = frame.copy()  # Create a copy of the frame
 
@@ -49,7 +59,7 @@ class ImageDraw:
             landmark_src = row['src']
             color = self.landmarks_color.get(landmark_src, (0, 0, 255))
             x, y = int(row['x'] * self.file_input.frame_width), int(row['y'] * self.file_input.frame_height)
-            cv2.circle(modified_frame, (x, y), 3, color, -1)
+            cv2.circle(modified_frame, (x, y), 2, color, -1)
 
         return modified_frame  # Return the modified frame
 
@@ -65,7 +75,7 @@ class ImageDraw:
             end_frame = self.file_input.total_frames
 
         for frame_num in range(start_frame, min(end_frame, self.file_input.total_frames - 1)):
-            flow = self.file_input.mv[frame_num].get()  # Convert UMat to NumPy array
+            flow = self.file_input.mv[frame_num]  # Convert UMat to NumPy array
 
             # Calculate vector magnitudes and angles
             magnitudes, angles = cv2.cartToPolar(flow[..., 0], flow[..., 1])
@@ -87,18 +97,22 @@ class ImageDraw:
             motion_vectors_img = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
 
             # Draw landmarks on the image if requested
-            motion_vectors_img = self.draw_landmarks_on_frame \
-                (motion_vectors_img, self.landmarks[self.landmarks['frame'] == frame_num]) if landmarks else None
+            motion_vectors_img = self.draw_landmarks_on_frame(motion_vectors_img, self.dataframe[
+                self.dataframe['frame'] == frame_num]) if landmarks else motion_vectors_img
 
             # Resize the image if requested
-            if resize is not None:
-                motion_vectors_img = cv2.resize(motion_vectors_img, (resize, resize))
+            if resize:
+                motion_vectors_img = cv2.resize(motion_vectors_img, (
+                    resize, int(motion_vectors_img.shape[0] * (resize / motion_vectors_img.shape[1]))))
 
             # Buffer the image
             self.seq_buffer.append(motion_vectors_img)
         return self
 
     def show(self, loop: bool = False, fps: int = None):
+        if len(self.seq_buffer) == 0:
+            print("No frames in the buffer. Use source_image() or motion_vectors() to populate the buffer.")
+            return self
         while True:
             key = 0  # Initialize key before the loop
 
@@ -142,7 +156,7 @@ class ImageDraw:
         if codec is None:
             codec = "None"
 
-        if not self.seq_buffer:
+        if len(self.seq_buffer) == 0:
             print("No frames in the buffer. Use source_image() or motion_vectors() to populate the buffer.")
             return
 

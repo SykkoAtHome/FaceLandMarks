@@ -40,8 +40,8 @@ class FileInput:
         print(f"Total frames: {self.total_frames}")
         self.frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        print(
-            f"Frame: {self.frame_width} x {self.frame_height} ({round(float(self.frame_width / self.frame_height), 4)})")
+        print(f"Frame: {self.frame_width} x {self.frame_height} "
+              f"({round(float(self.frame_width / self.frame_height), 4)})")
         self.fps = round(float(cap.get(cv2.CAP_PROP_FPS)), 3)
         print(f"FPS: {self.fps}")
 
@@ -72,14 +72,14 @@ class FileInput:
             self.frame_seq.append(frame)
 
         if self.name:
-            print("Image sequence name: ", self.name)
+            print(f"Image sequence name: {self.name}")
         self.total_frames = len(self.frame_seq)
-        print("Total frames: ", self.total_frames)
+        print(f"Total frames: {self.total_frames}")
         self.frame_width = first_image.shape[1]
-        print("Frame width: ", self.frame_width)
         self.frame_height = first_image.shape[0]
-        print("Frame height: ", self.frame_height)
-        print("FPS: ", self.fps, " (default)")
+        print(f"Frame: {self.frame_width} x {self.frame_height} "
+              f"({round(float(self.frame_width / self.frame_height), 4)})")
+        print(f"FPS: {self.fps} (default)")
 
     def motion_vectors(self):
         self.mv = []
@@ -95,14 +95,15 @@ class FileInput:
                 prev=prev_frame,
                 next=current_frame,
                 flow=None,
-                pyr_scale=.1,
+                pyr_scale=.8,
                 levels=5,
                 winsize=15,
-                iterations=10,
+                iterations=3,
                 poly_n=5,
                 poly_sigma=1.2,
                 flags=cv2.OPTFLOW_FARNEBACK_GAUSSIAN)
 
+            flow = flow.get()  # Convert UMat to NumPy array
             motion_vectors_list.append(flow)
 
         end_time = cv2.getTickCount()

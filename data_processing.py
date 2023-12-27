@@ -3,23 +3,27 @@ import cv2
 import mediapipe as mp
 import numpy as np
 import pandas as pd
-from scipy.interpolate import griddata, interp1d
+from scipy.interpolate import interp1d
+
+from file_input import FileInput
 
 mp_face_mesh = mp.solutions.face_mesh
 
 
-class ImageProcessing:
-    def __init__(self, file_input, auto: bool = False, fill: bool = False):
+class DataProcessing:
+    def __init__(self, file_input: FileInput, auto: bool = False, fill: bool = False, refine: bool = False):
         self.file_input = file_input
+        self.face_mesh = None
+        self.mp_landmarks = self.auto_detect_landmarks() if auto else self.detect_landmarks()  # Placeholder for landmarks detected by mediapipe
+        self.dataframe = self.landmarks_to_dataframe()  # Placeholder for landmarks converted to dataframe
+        self.dataframe_refined = None  # Placeholder for refined landmarks
+        self.fill_blanks() if fill else None
+        self.refine_landmarks() if refine else None
+
+    def detect_landmarks(self):
         self.face_mesh = mp_face_mesh.FaceMesh(min_detection_confidence=.5,
                                                max_num_faces=1,
                                                static_image_mode=True)
-        self.mp_landmarks = self.auto_detect_landmarks() if auto else self.detect_landmarks()  # Placeholder for landmarks detected by mediapipe
-        self.dataframe = self.landmarks_to_dataframe()  # Placeholder for landmarks converted to dataframe
-        self.landmarks = {}
-        self.fill_blanks() if fill else None
-
-    def detect_landmarks(self):
         start_time = time.time()
 
         if self.file_input.name:
@@ -73,7 +77,7 @@ class ImageProcessing:
 
     def landmarks_to_dataframe(self):
         print("Converting landmarks to dataframe...")
-        df_columns = ["frame", "src", "landmark_id", "x", "y", "z"]
+        df_columns = ["frame", "src", "landmark_id", "x", "y", "z", "x_px", "y_px"]
         df_data = []
 
         # Iterate over total number of frames
@@ -83,31 +87,14 @@ class ImageProcessing:
 
                 for landmark_id, landmark in enumerate(frame_landmarks.landmark):
                     x, y, z = landmark.x, landmark.y, landmark.z
-                    df_data.append([frame_num, "mediapipe", landmark_id, x, y, z])
+                    x_px, y_px = int(x * self.file_input.frame_width), int(y * self.file_input.frame_height)
+                    df_data.append([frame_num, "mediapipe", landmark_id, x, y, z, x_px, y_px])
 
         df_landmarks = pd.DataFrame(df_data, columns=df_columns)
         if len(df_landmarks['frame'].unique()) < len(self.file_input.frame_seq):
-            print(f"Warrning: Frames without landmarks: {len(self.file_input.frame_seq) - len(df_landmarks['frame'].unique())}")
+            print(
+                f"Warrning: Frames without landmarks: {len(self.file_input.frame_seq) - len(df_landmarks['frame'].unique())}")
         return df_landmarks
-
-    def dataframe_to_landmarks(self):
-        print("Converting dataframe to landmarks...")
-        landmarks_by_frame = {}
-
-        for frame_num, landmarks_info in self.dataframe.groupby("frame"):
-            frame_landmarks = self.mp_landmarks[frame_num]
-
-            for _, row in landmarks_info.iterrows():
-                landmark_id = row["landmark_id"]
-                x, y, z = row["x"], row["y"], row["z"]
-
-                if landmark_id < len(frame_landmarks.landmark):
-                    frame_landmarks.landmark[landmark_id].x = x
-                    frame_landmarks.landmark[landmark_id].y = y
-                    frame_landmarks.landmark[landmark_id].z = z
-
-            landmarks_by_frame[frame_num] = frame_landmarks
-        self.landmarks = landmarks_by_frame
 
     def extract_face(self, frame_num):
         # Sprawdzamy, czy żądana klatka jest dostępna
@@ -141,8 +128,12 @@ class ImageProcessing:
 
     def fill_blanks(self) -> None:
         all_frames_without_landmarks = self.find_all_frames_without_landmarks()
-        print(f"Frames without landmarks: {len(all_frames_without_landmarks)}")
-        self.dataframe_interpolation()
+        if len(all_frames_without_landmarks) == 0:
+            print("No frames to work with. Skipping interpolation.")
+            return None
+        else:
+            print(f"Calculating interpolation for missing frames...")
+            self.dataframe_interpolation()
 
     def find_all_frames_without_landmarks(self) -> list:
         all_frames_without_landmarks = []
@@ -248,4 +239,71 @@ class ImageProcessing:
                 else:
                     print(f"Warning: No data for frame {frame_num} and landmark {landmark_id}")
         all_frames_without_landmarks = self.find_all_frames_without_landmarks()
-        print(f"Frames without landmarks: {len(all_frames_without_landmarks)}")
+        if len(all_frames_without_landmarks) == 0:
+            print(f"Success. Frames without landmarks: {len(all_frames_without_landmarks)}")
+        else:
+            print(f"Warning. Frames without landmarks: {len(all_frames_without_landmarks)}")
+
+        return None
+
+    """ Refining """
+
+    def refine_landmarks(self):
+        print("Refining landmarks...")
+        df_columns = ["frame", "src", "landmark_id", "x", "y", "z", "x_px", "y_px"]
+        df_data = []
+
+        for landmark_id in range(self.dataframe['landmark_id'].max() + 1):
+            refined_landmarks = self.refine_landmark_with_motion(landmark_id)
+            df_data.extend(refined_landmarks)
+
+        # Stwórz DataFrame z zebranych danych
+        self.dataframe_refined = pd.DataFrame(df_data, columns=df_columns)
+
+    def refine_landmark_with_motion(self, landmark_id):
+        refined_landmarks = []
+
+        if self.file_input.mv is None:
+            raise ValueError("Motion vectors not available.")
+
+        # Filtruj ramki z danym landmark_id
+        landmark_frames = self.dataframe[self.dataframe['landmark_id'] == landmark_id]
+
+        for frame_num in landmark_frames['frame'].unique():
+            frame_landmark = landmark_frames[landmark_frames['frame'] == frame_num].iloc[0]
+
+            # Pobierz współrzędne punktu landmarka dla tej klatki
+            x_px, y_px, z = frame_landmark['x_px'], frame_landmark['y_px'], frame_landmark['z']
+
+            # Pobierz dane z poprzedniej klatki
+            prev_frame_landmark = self.dataframe[
+                (self.dataframe['landmark_id'] == landmark_id) &
+                (self.dataframe['frame'] == frame_num - 1)
+                ]
+
+            # Sprawdź, czy istnieją dane z poprzedniej klatki
+            if not prev_frame_landmark.empty:
+                # Pobierz x_px i y_px z poprzedniej klatki
+                prev_x_px = prev_frame_landmark['x_px'].values[0]
+                prev_y_px = prev_frame_landmark['y_px'].values[0]
+            else:
+                # Jeśli nie, to ustaw x_px i y_px na aktualne
+                prev_x_px, prev_y_px = x_px, y_px
+
+            # Oblicz przesunięcie motion_vector
+            # motion_vector = self.file_input.mv[frame_num - 1][prev_y_px, prev_x_px]
+            motion_vector = self.file_input.mv[frame_num - 1]
+
+            # Oblicz nowe x_px i y_px
+            # new_x_px = int(x_px + motion_vector[0])
+            # new_y_px = int(y_px + motion_vector[1])
+            new_x_px = int(x_px + motion_vector[prev_y_px, prev_x_px, 0])
+            new_y_px = int(y_px + motion_vector[prev_y_px, prev_x_px, 1])
+
+            # Przelicz nowe współrzędne na piksele
+            new_x = (new_x_px / self.file_input.frame_width)
+            new_y = (new_y_px / self.file_input.frame_height)
+
+            refined_landmarks.append([frame_num, "motion", landmark_id, new_x, new_y, z, new_x_px, new_y_px])
+
+        return refined_landmarks
